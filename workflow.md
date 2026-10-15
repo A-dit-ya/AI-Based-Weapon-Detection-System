@@ -1,91 +1,159 @@
-This `workflow.md` is designed to align your team on the distributed architecture. It breaks down the "forced" (but powerful) stack into logical phases, from data acquisition to Kubernetes deployment.
+# Workflow: AI-Based Weapon Detection System
+
+## 1. Project Overview
+
+This project is an AI-powered weapon detection application built using a React frontend, a FastAPI backend, and a YOLO object detection model.
+
+The backend accepts uploaded images and videos, runs model inference, and returns detection results or a processed video.
+
+## 2. System Architecture
+
+The current architecture uses direct inference through the FastAPI backend.
+
+**Technology stack**
+
+- **Frontend:** React and Vite
+- **Backend:** FastAPI and Uvicorn
+- **Object Detection:** Ultralytics YOLO
+- **Image and Video Processing:** OpenCV and NumPy
+- **Model Weights:** `backend/models/best.pt`
+- **Hardware Acceleration:** CUDA when available, otherwise CPU
+
+### Processing Flow
+
+1. The user selects an image or video in the frontend.
+2. The frontend sends the uploaded file to the appropriate backend endpoint.
+3. FastAPI receives the file.
+4. The YOLO model processes the image or video frames.
+5. For images, the backend returns detection labels, confidence scores, and bounding-box coordinates.
+6. For videos, the backend returns a processed video with detection annotations.
+
+## 3. Backend Development
+
+### Model Initialization
+
+The backend creates a persistent detector worker and loads the trained YOLO model from `models/best.pt`.
+
+The inference device is selected automatically:
+
+- CUDA GPU when available.
+- CPU when CUDA is unavailable.
+
+The current detection confidence threshold is `0.5`.
+
+### Image Detection
+
+**Endpoint:** `POST /detect`
+
+The endpoint accepts an uploaded image and returns JSON containing a `detections` array.
+
+Each detection contains:
+
+- `bbox`: Bounding-box coordinates in `[x1, y1, x2, y2]` format.
+- `confidence`: Model confidence score.
+- `label`: Detected class name.
+
+### Video Detection
+
+**Endpoint:** `POST /video`
+
+The endpoint accepts an uploaded video, saves it temporarily, processes its frames with the YOLO model, and returns the annotated video.
+
+The current implementation uses OpenCV's video capture and writer functionality.
+
+## 4. Frontend Integration
+
+The frontend is responsible for providing the user interface and communicating with the backend.
+
+The expected integration includes:
+
+1. Selecting an image or video.
+2. Sending the file to the corresponding FastAPI endpoint.
+3. Displaying image detection results.
+4. Presenting the processed video when video processing succeeds.
+5. Showing appropriate loading indicators and error messages.
+
+Frontend behavior should be updated here as additional features are implemented and verified.
+
+## 5. Local Development Setup
+
+### Prerequisites
+
+- Python installed.
+- Node.js and npm installed.
+- Git installed.
+- Project model weights available at the expected path.
+
+### Start the Backend
+
+From the backend directory, install the dependencies listed in `requirements.txt`, then run:
+
+```bash
+uvicorn main:app --reload
+```
+
+FastAPI's interactive API documentation is normally available at:
+
+`http://127.0.0.1:8000/docs`
+
+### Start the Frontend
+
+From the frontend directory, install the dependencies and start the Vite development server:
+
+```bash
+npm install
+npm run dev
+```
+
+Use the URL printed by Vite to open the frontend.
+
+The frontend's API URL and the backend's CORS configuration must be set appropriately for the local development environment.
+
+## 6. Testing and Validation
+
+Before releasing changes, verify the following:
+
+- The backend starts and loads the model successfully.
+- Image uploads return the expected detection response.
+- Bounding-box coordinates, labels, and confidence scores are valid.
+- Video uploads produce a playable annotated video.
+- Missing or unsupported files produce appropriate errors.
+- The frontend handles failed requests and long-running video processing.
+- The application works on CPU, with GPU acceleration tested separately when available.
+
+## 7. Security and Reliability
+
+Before deploying the application publicly:
+
+- Restrict CORS to trusted frontend origins.
+- Validate uploaded file types and sizes.
+- Generate safe temporary filenames and clean up temporary files.
+- Handle invalid images, videos, and model-loading failures.
+- Configure appropriate request limits and error handling.
+- Avoid exposing credentials, private datasets, or sensitive information.
+
+## 8. Future Enhancements
+
+The following are potential improvements and are not assumed to be implemented in the current codebase:
+
+- WebSocket-based live video detection.
+- Distributed inference using Ray Serve.
+- Distributed model training using Ray Train.
+- Docker containerization.
+- Kubernetes deployment and scaling.
+- Automated tests and continuous integration.
+- Performance evaluation using documented precision, recall, and mAP metrics.
+
+## 9. Development Workflow
+
+1. Make changes in the backend or frontend.
+2. Run the application locally.
+3. Test the affected functionality.
+4. Review changes and check for accidental secrets.
+5. Commit changes using descriptive Git messages.
+6. Push changes to GitHub.
+7. Update this document whenever the implementation or architecture changes.
 
 ---
 
-# Workflow: Distributed Weapon Detection System
-
-This document outlines the development and deployment pipeline for the Weapon Detection System using **React**, **FastAPI**, **Ray**, **Docker**, and **Kubernetes**.
-
-## 1. System Architecture Overview
-The system follows a distributed AI-as-a-Service (AIaaS) pattern. Unlike a monolithic app, we decouple the API gateway from the heavy-lifting inference engine using Ray.
-
-
-
-* **Frontend:** React (Vite) + Canvas API for real-time bounding box rendering.
-* **Gateway:** FastAPI (handles Auth, Rate Limiting, and Ray Client communication).
-* **Inference/Training:** Ray (Ray Serve for scaling models; Ray Train for distributed fine-tuning).
-* **Infrastructure:** Kubernetes (Orchestrated via KubeRay Operator).
-
----
-
-## 2. Phase 1: Data Acquisition & Model Fine-Tuning
-Since standard YOLO models (like YOLOv8/v11) are trained on the COCO dataset, they lack specific weapon classes (e.g., handguns, rifles).
-
-### **Data Sourcing**
-* **Primary Sources:** Roboflow Universe (Weapon Detection Datasets), Kaggle (CCTV-Gun datasets).
-* **Annotation Format:** YOLO PyTorch format (txt labels).
-
-### **Distributed Training with Ray Train**
-1.  **Initialize Ray Cluster:** Spin up multiple worker nodes with GPUs.
-2.  **Fine-Tuning:** Use `ray.train` to distribute the YOLO training process across nodes.
-3.  **Artifact Storage:** Save the resulting `best.pt` model weights to a Persistent Volume (PV) accessible by the cluster.
-
----
-
-## 3. Phase 2: Ray Serve Development (The Brain)
-We use **Ray Serve** to wrap the YOLO model. This allows us to scale inference horizontally across K8s pods without restarting the FastAPI server.
-
-* **Script:** Create a `WeaponDetector` class decorated with `@serve.deployment`.
-* **Logic:** * Load `best.pt`.
-    * Process incoming byte streams (images/video frames).
-    * Return JSON coordinates: `[x1, y1, x2, y2, confidence, class]`.
-
----
-
-## 4. Phase 3: FastAPI Gateway Development
-FastAPI acts as the entry point for the React frontend. It does **not** run the model locally.
-
-* **Endpoint `POST /detect`:** Receives an image, converts it to a NumPy array, and calls `ray_serve_handle.remote()`.
-* **Endpoint `WS /stream`:** (Optional) Uses WebSockets to pipe video frames from the webcam to Ray Serve for real-time detection.
-
----
-
-## 5. Phase 4: React Frontend (The UI)
-The frontend focuses on performance to ensure low-latency visualization.
-
-* **Image Processing:** Users upload images; React sends them to the `/detect` endpoint.
-* **Bounding Boxes:** Use the HTML5 **Canvas API** to draw boxes over the image based on the JSON response from FastAPI.
-* **State Management:** Use `useRef` for the canvas to prevent unnecessary re-renders during high-frequency video updates.
-
----
-
-## 6. Phase 5: Containerization & Orchestration
-This is where the stack becomes "production-grade."
-
-### **Dockerization**
-We require three distinct Docker images:
-1.  **Frontend Image:** Nginx serving the React build.
-2.  **API Image:** FastAPI + Ray Client.
-3.  **Ray Worker Image:** PyTorch + Ultralytics + Ray (configured for GPU/CPU).
-
-### **Kubernetes (K8s) Deployment**
-1.  **KubeRay Operator:** Install the operator to manage Ray clusters on K8s.
-2.  **RayCluster Resource:** Define the head and worker nodes in a YAML manifest.
-3.  **FastAPI Service:** Deploy as a standard K8s Deployment + Service.
-4.  **Ingress:** Configure an Nginx Ingress to route traffic to the Frontend and API.
-
----
-
-## 7. Development Roadmap
-| Step | Task | Owner |
-| :--- | :--- | :--- |
-| 1 | Scrape & Clean Weapon Datasets | Data Team |
-| 2 | Setup Ray Train script for YOLO fine-tuning | AI Team |
-| 3 | Develop Ray Serve deployment for inference | AI Team |
-| 4 | Build FastAPI wrapper & CORS config | Backend |
-| 5 | Build React Canvas rendering component | Frontend |
-| 6 | Create Dockerfiles & Helm Charts for K8s | DevOps |
-
----
-
-> **Note to Team:** Ensure your local environment has `docker-desktop` with Kubernetes enabled. For local Ray testing, run `ray start --head` before starting the FastAPI server.
+**Note:** This document describes the architecture evidenced by the current backend implementation. Future infrastructure and features should be documented as implemented only after they have been developed and tested.
